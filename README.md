@@ -9,7 +9,7 @@ A self-study plan for going from math foundations to building a large language m
 
 **Videos** — StatQuest with Josh Starmer (160+ videos, woven throughout all phases)
 
-**Papers** — 38 foundational papers, 2012–2023
+**Papers** — 43 foundational papers, 2012–2024
 
 ---
 
@@ -21,6 +21,7 @@ A self-study plan for going from math foundations to building a large language m
 - [Phase 3 — Deep Learning](#phase-3--deep-learning)
 - [Phase 3b — Generative Models](#phase-3b--generative-models)
 - [Phase 3c — Self-Supervised Learning](#phase-3c--self-supervised-learning)
+- [Phase 3d — JEPA and World Models](#phase-3d--jepa-and-world-models)
 - [Phase 4 — Build a Large Language Model](#phase-4--build-a-large-language-model)
 - [Papers — Full Reading List](#papers--full-reading-list)
 
@@ -33,8 +34,9 @@ A self-study plan for going from math foundations to building a large language m
 | Phase 1 | Math foundations | MML Ch. 1–7, Goodfellow Ch. 2–4, StatQuest Stats Fundamentals |
 | Phase 2 | Classical ML | Goodfellow Ch. 5, StatQuest ML playlist, MML Ch. 8–12 |
 | Phase 3 | Deep learning | Goodfellow Ch. 6–20, StatQuest Neural Networks & Transformers |
-| Phase 3b | Generative models | VAE → GAN → DCGAN → VQ-VAE → StyleGAN → CLIP → DDPM → LDM |
+| Phase 3b | Generative models | VAE → GAN → DCGAN → VQ-VAE → StyleGAN → CLIP → DDPM → DDIM → Score SDE → LDM |
 | Phase 3c | Self-supervised learning | MoCo → SimCLR → BYOL → DINO → Barlow Twins → MAE |
+| Phase 3d | JEPA and world models | LeCun position paper → I-JEPA → V-JEPA |
 | Phase 4 | Build an LLM | Raschka Ch. 1–7, scaling and alignment papers |
 
 No timelines. Work through each step in order — each one builds on the last.
@@ -373,9 +375,42 @@ Grows generator and discriminator together from 4×4 to 1024×1024. First GAN to
 
 Mapping network z→w + per-layer AdaIN style injection disentangles high-level attributes from fine detail. The per-layer conditioning idea is the same mechanism used in Stable Diffusion's U-Net cross-attention.
 
+### Step G5b — DDIM: accelerated diffusion sampling
+
+> 📄 **Paper 30:** [Denoising Diffusion Implicit Models (DDIM)](https://arxiv.org/abs/2010.02502) — Song, Meng, Ermon (ICLR 2021)
+
+Read immediately after DDPM (Step 34). DDPM requires hundreds to thousands of denoising steps at inference — slow and expensive. DDIM solves this by replacing the Markov chain with a non-Markovian process that produces the same marginal distributions but can be run in 10–50 steps with little quality loss. It is the sampling algorithm used in virtually every deployed diffusion model.
+
+**Key ideas:**
+- Reframes the forward process as non-Markovian: each step can look further back, skipping intermediates
+- Same trained DDPM model weights — no retraining needed, just a different inference procedure
+- DDIM inversion: because the process is deterministic, you can encode a real image into a noise vector and reconstruct it exactly — enables image editing and interpolation
+- 10–50 steps vs. 1000: 20–100× speedup with minimal perceptual quality loss
+
+**Connect forward:** DDIM inversion is the basis for text-guided image editing (e.g. "make this photo look like a painting") in Stable Diffusion.
+
+[arXiv:2010.02502 →](https://arxiv.org/abs/2010.02502)
+
+### Step G5c — Score-Based Generative Modeling through SDEs
+
+> 📄 **Paper 31:** [Score-Based Generative Modeling through Stochastic Differential Equations](https://arxiv.org/abs/2011.13456) — Song, Sohl-Dickstein, Kingma, Kumar, Ermon, Poole (ICLR 2021)
+
+Read after DDIM. This paper is the theoretical unification of all diffusion-like models. While DDPM defines a specific discrete Markov chain and DDIM provides faster sampling, this work shows both are special cases of a continuous-time stochastic differential equation (SDE) framework. The forward SDE gradually perturbs data into noise; the reverse SDE — which generates data from noise — is defined by the **score function** (the gradient of the log data density), learned by a neural network.
+
+**Key ideas:**
+- Forward process: any SDE that converts data to Gaussian noise (DDPM's Markov chain is a discretisation of one such SDE)
+- Reverse process: given the score function ∇_x log p_t(x), the reverse SDE generates samples
+- Score matching: train a time-conditioned neural network to predict ∇_x log p_t(x) at all noise levels
+- Unifies DDPM (VP-SDE), NCSN/score matching (VE-SDE), and sub-VP variants under one framework
+- Enables continuous-time interpolation, exact likelihood computation, and more flexible architectures
+
+**Why this matters:** Any paper on diffusion models published after 2021 uses this SDE language. You cannot read the research literature without it.
+
+[arXiv:2011.13456 →](https://arxiv.org/abs/2011.13456)
+
 ### Step G6 — CLIP
 
-> 📄 **Paper 30:** [Learning Transferable Visual Models From Natural Language Supervision (CLIP)](https://arxiv.org/abs/2103.00020) — Radford, Kim, Hallacy et al. (ICML 2021)
+> 📄 **Paper 32:** [Learning Transferable Visual Models From Natural Language Supervision (CLIP)](https://arxiv.org/abs/2103.00020) — Radford, Kim, Hallacy et al. (ICML 2021)
 
 Aligns images and text in a shared embedding space using contrastive training on 400M internet pairs. Zero-shot: without seeing ImageNet during training, matches a fully supervised ResNet-50. The CLIP text encoder is the conditioning pathway in Stable Diffusion.
 
@@ -420,6 +455,64 @@ One objective: make the cross-correlation matrix between two views' embeddings e
 > 📄 **Paper 24:** [Masked Autoencoders Are Scalable Vision Learners (MAE)](https://arxiv.org/abs/2111.06377) — He, Chen, Xie et al. (CVPR 2022)
 
 Mask 75% of image patches; train encoder on the visible 25% only; lightweight decoder reconstructs masked pixels. Asymmetric design (encoder sees no mask tokens) gives 3× training speedup. ViT-Huge with MAE reaches 87.8% on ImageNet — the visual analogue of BERT's MLM.
+
+---
+
+## Phase 3d — JEPA and World Models
+
+Read after Phase 3c (SSL). JEPA is Yann LeCun's proposed alternative to both contrastive SSL and generative models — it predicts in **latent space** rather than pixel space, avoiding the compute waste of reconstruction while avoiding the augmentation bias of contrastive methods. The three papers here form a tight causal chain: theory → image implementation → video extension.
+
+### Step JEPA1 — A Path Towards Autonomous Machine Intelligence
+
+> 📄 **Paper 39:** [A Path Towards Autonomous Machine Intelligence](https://openreview.net/pdf?id=BZ5a1r-kVsf) — Yann LeCun (OpenReview 2022)
+
+This position paper is the conceptual origin of the entire JEPA family. LeCun argues that current AI — whether autoregressive LLMs or contrastive SSL — is fundamentally limited because it either predicts pixels (wasteful) or relies on hand-crafted augmentations (biased). He proposes a cognitive architecture built around **Joint-Embedding Predictive Architectures (JEPA)**: models that predict the representation of one part of the input from the representation of another part, in latent space, conditioned on a latent variable z that captures what is unpredictable.
+
+**Key ideas:**
+- Critique of generative models: reconstructing pixels forces the model to spend capacity on unpredictable low-level details
+- Critique of contrastive SSL: augmentation invariances are hand-engineered and biased toward specific downstream tasks
+- JEPA: predict the representation of y from the representation of x — in embedding space, not pixel space — via a learned predictor conditioned on z
+- Hierarchical JEPA: stack multiple JEPA modules operating at different levels of abstraction, building toward a world model
+- Energy-based framing: the system assigns low energy to compatible (x, y) pairs; learning is about shaping the energy landscape
+
+**Why read this:** I-JEPA and V-JEPA are direct implementations of ideas proposed here. Reading the theory first makes the architectural choices in those papers obvious rather than arbitrary.
+
+[OpenReview →](https://openreview.net/pdf?id=BZ5a1r-kVsf)
+
+### Step JEPA2 — I-JEPA: image-based joint-embedding predictive architecture
+
+> 📄 **Paper 40:** [Self-Supervised Learning from Images with a Joint-Embedding Predictive Architecture (I-JEPA)](https://arxiv.org/abs/2301.08243) — Assran, Duval, Misra, Bojanowski, Vincent, Rabbat, LeCun, Ballas (CVPR 2023)
+
+The first concrete implementation of LeCun's JEPA idea for images. Given a single image, mask several target blocks at large scale; encode an unmasked context block; train a predictor to predict the representations of the masked target blocks from the context representation. No data augmentations. No pixel reconstruction. Prediction happens entirely in the encoder's latent space.
+
+**Key ideas:**
+- Context encoder: ViT that encodes a single large unmasked region of the image
+- Target encoder: momentum-updated ViT (like BYOL's target network) that encodes masked regions — these are the prediction targets
+- Predictor: small transformer conditioned on positional information that maps context representation to target representations
+- Masking strategy is crucial: targets must be large (15–20% of image each) and multiple; small patches allow trivial local texture completion rather than semantic reasoning
+- No augmentations needed: the positional prediction task is the self-supervised signal
+- ViT-Huge trained in under 38 hours on 32 A100s; strong on linear classification, object counting, and depth prediction
+
+**Contrast with MAE:** MAE predicts pixels from visible patches. I-JEPA predicts representations from a context region. I-JEPA's representations are more semantic; MAE's decoder learns low-level texture detail that the encoder does not need to retain.
+
+[arXiv:2301.08243 →](https://arxiv.org/abs/2301.08243)
+
+### Step JEPA3 — V-JEPA: video joint-embedding predictive architecture
+
+> 📄 **Paper 41:** [Revisiting Feature Prediction for Learning Visual Representations from Video (V-JEPA)](https://arxiv.org/abs/2404.08471) — Bardes, Garrido, Ponce, Chen, Rabbat, LeCun, Assran, Ballas (TMLR 2024)
+
+Extends I-JEPA to video. Given a video, mask large spatiotemporal tubes of patches; encode the unmasked spatiotemporal context; train a predictor to predict the representations of the masked tubes. Trained on 2 million public videos with no labels, no text, no pretrained encoders, and no pixel reconstruction. The frozen backbone generalises to motion and appearance tasks without any parameter updates.
+
+**Key ideas:**
+- Spatiotemporal masking: tubes of patches across time, not just spatial regions — forces temporal reasoning
+- Feature prediction only: no pixel decoder, no reconstruction loss — the predictor and encoder are the entire model
+- Frozen evaluation: ViT-H/16 trained only on video achieves 81.9% on Kinetics-400 and 72.2% on Something-Something-v2 with a frozen backbone and a lightweight attentive probe
+- Temporal understanding emerges from prediction: the model must reason about motion and causality to predict masked future and past frames in representation space
+- No augmentations, no negatives, no labels: the spatiotemporal prediction objective is sufficient
+
+**Connect to V-JEPA 2 (2025):** The follow-up V-JEPA 2 (arXiv:2506.09985) scales further and enables planning — the model can predict consequences of actions in latent space, a step toward the world model architecture LeCun described in his position paper.
+
+[arXiv:2404.08471 →](https://arxiv.org/abs/2404.08471)
 
 ---
 
@@ -519,7 +612,7 @@ Chinchilla-optimal training + RMSNorm + SwiGLU + RoPE + open weights. Llama-13B 
 
 ## Papers — Full Reading List
 
-38 papers in the order you should read them. Each section assumes only the papers before it.
+43 papers in the order you should read them. Each section assumes only the papers before it.
 
 ### Section 1 — Orientation
 
@@ -589,20 +682,30 @@ Chinchilla-optimal training + RMSNorm + SwiGLU + RoPE + open weights. Llama-13B 
 | 27 | Neural Discrete Representation Learning **(VQ-VAE)** | van den Oord, Vinyals, Kavukcuoglu | 2017 | Generative / Discrete | [arXiv:1711.00937](https://arxiv.org/abs/1711.00937) |
 | 28 | Progressive Growing of GANs for Improved Quality, Stability, and Variation | Karras, Aila, Laine, Lehtinen | 2017 | Generative / GAN | [arXiv:1710.10196](https://arxiv.org/abs/1710.10196) |
 | 29 | A Style-Based Generator Architecture for GANs **(StyleGAN)** | Karras, Laine, Aila | 2018 | Generative / GAN | [arXiv:1812.04948](https://arxiv.org/abs/1812.04948) |
-| 30 | Learning Transferable Visual Models From Natural Language Supervision **(CLIP)** | Radford, Kim, Hallacy et al. | 2021 | Multimodal / SSL | [arXiv:2103.00020](https://arxiv.org/abs/2103.00020) |
-| 31 | Denoising Diffusion Probabilistic Models **(DDPM)** | Ho, Jain, Abbeel | 2020 | Generative / Diffusion | [arXiv:2006.11239](https://arxiv.org/abs/2006.11239) |
-| 32 | High-Resolution Image Synthesis with Latent Diffusion Models **(Stable Diffusion)** | Rombach, Blattmann et al. | 2021 | Generative / Diffusion | [arXiv:2112.10752](https://arxiv.org/abs/2112.10752) |
+| 30 | Denoising Diffusion Probabilistic Models **(DDPM)** | Ho, Jain, Abbeel | 2020 | Generative / Diffusion | [arXiv:2006.11239](https://arxiv.org/abs/2006.11239) |
+| 31 | Denoising Diffusion Implicit Models **(DDIM)** | Song, Meng, Ermon | 2020 | Generative / Diffusion | [arXiv:2010.02502](https://arxiv.org/abs/2010.02502) |
+| 32 | Score-Based Generative Modeling through Stochastic Differential Equations | Song, Sohl-Dickstein, Kingma et al. | 2020 | Generative / Diffusion | [arXiv:2011.13456](https://arxiv.org/abs/2011.13456) |
+| 33 | Learning Transferable Visual Models From Natural Language Supervision **(CLIP)** | Radford, Kim, Hallacy et al. | 2021 | Multimodal / SSL | [arXiv:2103.00020](https://arxiv.org/abs/2103.00020) |
+| 34 | High-Resolution Image Synthesis with Latent Diffusion Models **(Stable Diffusion)** | Rombach, Blattmann et al. | 2021 | Generative / Diffusion | [arXiv:2112.10752](https://arxiv.org/abs/2112.10752) |
 
-### Section 9 — LLM scaling, alignment, and efficiency
+### Section 9 — JEPA and world models
 
 | # | Paper | Authors | Year | Category | Link |
 |---|---|---|---|---|---|
-| 33 | FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness | Dao, Fu, Ermon, Rudra | 2022 | Efficiency | [arXiv:2205.14135](https://arxiv.org/abs/2205.14135) |
-| 34 | Training Compute-Optimal Large Language Models **(Chinchilla)** | Hoffmann et al. | 2022 | LLM / Scaling | [arXiv:2203.15556](https://arxiv.org/abs/2203.15556) |
-| 35 | Training Language Models to Follow Instructions with Human Feedback **(InstructGPT)** | Ouyang et al. | 2022 | Alignment / RLHF | [arXiv:2203.02155](https://arxiv.org/abs/2203.02155) |
-| 36 | LoRA: Low-Rank Adaptation of Large Language Models | Hu et al. | 2021 | Efficiency / Fine-tuning | [arXiv:2106.09685](https://arxiv.org/abs/2106.09685) |
-| 37 | Chain-of-Thought Prompting Elicits Reasoning in Large Language Models | Wei et al. | 2022 | Alignment / Prompting | [arXiv:2201.11903](https://arxiv.org/abs/2201.11903) |
-| 38 | Llama: Open and Efficient Foundation Language Models | Touvron et al. | 2023 | LLM / Open | [arXiv:2302.13971](https://arxiv.org/abs/2302.13971) |
+| 35 | A Path Towards Autonomous Machine Intelligence | Yann LeCun | 2022 | JEPA / Theory | [OpenReview](https://openreview.net/pdf?id=BZ5a1r-kVsf) |
+| 36 | Self-Supervised Learning from Images with a Joint-Embedding Predictive Architecture **(I-JEPA)** | Assran, Duval, Misra, LeCun et al. | 2023 | JEPA / SSL | [arXiv:2301.08243](https://arxiv.org/abs/2301.08243) |
+| 37 | Revisiting Feature Prediction for Learning Visual Representations from Video **(V-JEPA)** | Bardes, Garrido, Ponce, LeCun et al. | 2024 | JEPA / Video | [arXiv:2404.08471](https://arxiv.org/abs/2404.08471) |
+
+### Section 10 — LLM scaling, alignment, and efficiency
+
+| # | Paper | Authors | Year | Category | Link |
+|---|---|---|---|---|---|
+| 38 | FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness | Dao, Fu, Ermon, Rudra | 2022 | Efficiency | [arXiv:2205.14135](https://arxiv.org/abs/2205.14135) |
+| 39 | Training Compute-Optimal Large Language Models **(Chinchilla)** | Hoffmann et al. | 2022 | LLM / Scaling | [arXiv:2203.15556](https://arxiv.org/abs/2203.15556) |
+| 40 | Training Language Models to Follow Instructions with Human Feedback **(InstructGPT)** | Ouyang et al. | 2022 | Alignment / RLHF | [arXiv:2203.02155](https://arxiv.org/abs/2203.02155) |
+| 41 | LoRA: Low-Rank Adaptation of Large Language Models | Hu et al. | 2021 | Efficiency / Fine-tuning | [arXiv:2106.09685](https://arxiv.org/abs/2106.09685) |
+| 42 | Chain-of-Thought Prompting Elicits Reasoning in Large Language Models | Wei et al. | 2022 | Alignment / Prompting | [arXiv:2201.11903](https://arxiv.org/abs/2201.11903) |
+| 43 | Llama: Open and Efficient Foundation Language Models | Touvron et al. | 2023 | LLM / Open | [arXiv:2302.13971](https://arxiv.org/abs/2302.13971) |
 
 ---
 
@@ -616,7 +719,8 @@ Chinchilla-optimal training + RMSNorm + SwiGLU + RoPE + open weights. Llama-13B 
 - **BERT → GPT-2 → GPT-3 → Scaling Laws** — language pretraining arc before vision transformers
 - **ViT → Swin** — Swin is only legible after understanding ViT's limitations
 - **SSL after ViT** — MoCo, DINO, and MAE all use ViT backbones
-- **Generative section as a block** — VAE → GAN → VQ-VAE → DDPM → LDM is best read in one sitting
+- **Generative section as a block** — VAE → GAN → VQ-VAE → DDPM → DDIM → Score SDE → LDM is best read in one sitting. DDIM and Score SDE go between DDPM and LDM because LDM's sampling relies on DDIM, and the Score SDE paper is the unified theoretical framework that all subsequent diffusion literature assumes
+- **JEPA after SSL** — I-JEPA is explicitly positioned as a third alternative to contrastive SSL and generative models; reading it after both MoCo/BYOL (contrastive) and MAE (masked generative) makes LeCun's critique concrete rather than abstract. V-JEPA is a direct video extension of I-JEPA and only makes sense after it
 - **LLM scaling and alignment last** — all assume the transformer, pretraining, and GPT-3-scale context
 
 ---
